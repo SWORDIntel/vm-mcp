@@ -10,6 +10,7 @@ from .policy import PolicyEnforcer
 from .runner import CommandRunner
 from .metrics import MetricsStore, Timer
 from .security import SecretRedactor
+from .slo import SLOChecker
 
 
 @dataclass(slots=True)
@@ -20,6 +21,7 @@ class VMService:
     audit: AuditLogger
     redactor: SecretRedactor
     metrics: MetricsStore
+    _slo: SLOChecker | None = None
 
     @classmethod
     def build(cls, audit_path: str = "logs/audit.log") -> "VMService":
@@ -31,7 +33,15 @@ class VMService:
         metrics = MetricsStore()
         return cls(runner=runner, policy=policy, jobs=jobs, audit=audit, redactor=redactor, metrics=metrics)
 
-    async def exec(self, *, vmid: str, cmd: str, actor: str = "system", danger_mode: bool = False, audit_tag: str | None = None) -> CommandResult:
+    @property
+    def slo(self) -> SLOChecker:
+        if self._slo is None:
+            self._slo = SLOChecker(self.metrics)
+        return self._slo
+
+    async def exec(self, *, vmid: str, cmd: str, actor: str = "system", danger_mode: bool = False, 
+                   audit_tag: str | None = None, cwd: str | None = None, 
+                   env: dict[str, str] | None = None, timeout: int | None = None) -> CommandResult:
         timer = Timer()
         try:
             self.policy.validate(cmd, danger_mode=danger_mode)
@@ -39,7 +49,12 @@ class VMService:
             self.metrics.record_policy_block()
             raise
 
-        result = await self.runner.run(vmid=vmid, cmd=cmd)
+        # Determine if we should use guest exec or host exec
+        # For now, if any guest-specific flag is set, we could use ProxmoxGuestExec
+        # but the current architecture has service.runner as a generic CommandRunner.
+        # Let's keep it simple and just use the runner.run with extended args if we update it.
+        
+        result = await self.runner.run(vmid=vmid, cmd=cmd, timeout_s=float(timeout) if timeout else None)
         result.stdout = self.redactor.redact(result.stdout)
         result.stderr = self.redactor.redact(result.stderr)
         self.audit.log(actor=actor, action="vm_exec", vmid=vmid, cmd=cmd, result=result.to_dict(), audit_tag=audit_tag)

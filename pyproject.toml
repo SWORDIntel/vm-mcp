@@ -8,3 +8,4 @@ pythonpath = ["src"]
 
 [project.scripts]
 vmctl = "vm_mcp.cli:main"
+vm-mcp-server = "vm_mcp.mcp_server:main"
