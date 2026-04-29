@@ -1,0 +1,10 @@
+[project]
+name = "vm-mcp"
+version = "0.1.0"
+requires-python = ">=3.10"
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+
+[project.scripts]
+vmctl = "vm_mcp.cli:main"
